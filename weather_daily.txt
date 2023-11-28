@@ -1,0 +1,60 @@
+from pyspark.sql import SparkSession
+from datetime import datetime, timedelta
+from io import StringIO
+import pandas as pd
+import boto3
+from pyspark.sql.functions import col, expr, date_format, hour
+from pyspark.sql import DataFrame
+from pyspark.sql.functions import year, month, dayofmonth
+# Initialize Spark session
+spark = SparkSession.builder.appName("S3partionaing").getOrCreate()
+
+# Define the S3 bucket and paths
+bucket = "proj-hbe-poc"
+
+folder_daily="final/joined_result_daily/"
+
+dest_path_daily="final/historical_data/"
+
+
+s3 = boto3.client('s3')
+count = 0
+# Use the list_objects_v2 method to get a list of objects in the folder
+# response = s3.list_objects_v2(Bucket=bucket, Prefix=folder_daily)
+# if 'Contents' in response:
+#     file_count = len(response['Contents'])
+
+    # for index, s3_object in enumerate(response['Contents']):
+    #     # Get each file name
+    #     file = s3_object['Key']
+         
+    #     file_path = f"s3a://{bucket}/{file}"
+df = spark.read.option("header", "true").csv("s3://proj-hbe-poc/final/joined_result_daily/*.csv")
+# You can perform actions on each file here
+
+# Ensure 'date' is of type DateType
+df = df.withColumn("date", date_format(col("date").cast("date"), "yyyy-MM-dd"))
+
+df = df.withColumn("year", year("date")).withColumn("month", month("date")).withColumn("day", dayofmonth("date"))         
+
+output_path = f"s3://{bucket}/{dest_path_daily}daily_data/country=us/"
+df=df.drop("id")
+df = df.withColumnRenamed("maxtempC", "maxtemp_c")\
+  .withColumnRenamed("mintempC", "mintemp_c")\
+  .withColumnRenamed("avgtempC", "avgtemp_c")\
+  .withColumnRenamed("totalprecipMM", "totalprecip_mm")\
+  .withColumnRenamed("uvIndex", "uv")\
+  .withColumnRenamed("place", "zip")
+           
+# Remove duplicate rows
+df = df.dropDuplicates()
+
+# Make column names lowercase
+df = df.select([col(column).alias(column.lower()) for column in df.columns])
+          
+           
+df.write.option("header", "true").mode("append").partitionBy("year", "month").parquet(output_path)
+        # count = count +1
+        # if index == file_count - 1:
+        #     print(count)
+        #     break  # Exit the loop after the last file
