@@ -1,0 +1,21 @@
+from pyspark.sql import SparkSession
+
+# Create a Spark session
+spark = SparkSession.builder.appName("example").getOrCreate()
+
+# Read the CSV data from the source S3 bucket
+source_bucket = "s3://proj-hbe-poc/final/joined_result_hr/*.csv"
+df = spark.read.option("header", "true").csv(source_bucket)
+
+# Repartition the data into 100 buckets
+num_buckets = 100
+df_repartitioned = df.repartition(num_buckets)
+
+# Specify the target S3 bucket for Parquet files
+target_bucket = "s3://proj-hbe-poc/final/bucketed_hour_data/"
+
+# Write the repartitioned data to Parquet files with bucketing
+df_repartitioned.write.mode("overwrite").parquet(target_bucket)
+
+# Stop the Spark session
+spark.stop()
